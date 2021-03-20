@@ -98,15 +98,17 @@ contract Dragon is ERC721 {
 contract Auction is Dragon {
 
     struct Auction {
-        address  seller;
+        address seller;
+        address bidder
         uint256 startingPrice;
         uint256 immediatBuyingPrice;
         uint currentPrice;
+        uint256 deadline;
     }
     
     // mapping the tokenId with the auction struct
-    mapping (uint256 => Auction) auctions;
-    
+    mapping (uint256 => Auction) public auctions;
+    mapping (uint256 => bool) public activeAuctions;
     constructor Auction() {
         
     }
@@ -115,24 +117,34 @@ contract Auction is Dragon {
         require()
     }
 
+    modifier activeAuction(uint256 tokenId) {
+        require(!activeAuctions[tokenId], 'The auction is not active');
+        _;
+    }
+
     // 
     //  
-    function createAuction(uint256 tokenId_, address payable seller_, uint256 startingPrice_, uint256 immediatBuyingPrice_) public returns(bool) {
-        require(_exists(tokenId_), 'This tokenId does not belong to this address')
-        auctions[tokenId_] = Auction(seller_, startingPrice_, immediatBuyingPrice_, startingPrice_);
-        return true
+    function createAuction(uint256 tokenId_, address payable seller_, uint256 startingPrice_, uint256 immediatBuyingPrice_) public activeAuction(tokenId_) returns(bool) {
+        require(_exists(tokenId_), 'This tokenId does not belong to this address');
+        require(ownerOf(tokenId_) == seller, 'The token does not belong to you');
+        activeAuctions[tokenId_] = true;
+        auctions[tokenId_] = Auction(seller_, seller_, startingPrice_, immediatBuyingPrice_, startingPrice_, now + (2 * 1 days) );
+        return true;
     }
     
     // Checks if the auction is still live
     // Checks if the amount entered is higher than the amount bidded
     // Returns true if the bid is placed, no if not
-    function bidOnAuction(address _bidder, uint256 _amount) public returns(bool) {
-
+    function bidOnAuction(uint256 _tokenId, address _bidder, uint256 _amount) public activeAuction(_tokenId) returns(bool) {
+        auctions[tokenId_].bidder = _bidder;
+        auctions[tokenId_].currentPrice = _amount;
+        return true;
     }
 
     // after 2 days of auction, the highest bidder can claim the token
-    function claimAuction() {
-        
+    function claimAuction(address from, address to, uint256 tokenId) public returns(bool) {
+        require(auctions[tokenId].deadline < now, 'the auction is not finished yet');
+        safeTransferFrom(auctions[tokenId].seller, auctions[tokenId].bidder, tokenId)
     }
 
 }
