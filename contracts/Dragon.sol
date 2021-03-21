@@ -38,29 +38,33 @@ contract Dragon is ERC721 {
 
 
     
-    function random(uint256 modulo) internal view returns (uint8) {
-      return uint8(SafeMath.mod(uint256(keccak256(block.timestamp, block.difficulty), modulo)));
+    function random(uint256 modulo) public returns (uint256) {
+      return SafeMath.mod(uint(keccak256(abi.encodePacked(
+            blockhash(block.number - 1),
+            block.timestamp
+        ))), modulo);
     }
    
 
 
     function declareAnimal() public onlyAllowed notZeroAddress returns(bool) {
     // call _mint
-        metadata[_numToken] = metadataGenerator();
+        metadataGenerator();
         _safeMint(msg.sender, _numToken);
         _numToken += 1;
         return true;
     }
 
-    function metadataGenerator() public returns(Characteristics){
-        Element elem = random(Element.Last);
+    function metadataGenerator() private returns(bool){
+        Element elem = Element(random(uint(Element.GROUND)));
         bool gender = random(2) == 0 ? true : false;
         uint256 defense = random(5);
         uint256 attack = SafeMath.add(10, random(10));
         uint256 hp = SafeMath.add(50, random(50));
         uint256 init = random(100);
         Characteristics memory randomCharac = Characteristics(elem, gender, defense, attack, hp, init);
-        return randomCharac;
+        metadata[_numToken] = randomCharac;
+        return true;
     }
 
 
@@ -73,7 +77,7 @@ contract Dragon is ERC721 {
 
 
 
-    function breedAnimal(_tokenId1, _tokenId2) public onlyAllowed notZeroAddress {
+    function breedAnimal(uint256 _tokenId1, uint256 _tokenId2) public onlyAllowed notZeroAddress {
         require(ownerOf(_tokenId1) == ownerOf(_tokenId2), 'both token must be from the same token holder in order to be bred');
         Element elem = metadata[_tokenId1].elem;
         bool gender = random(2) == 0 ? true : false;
@@ -88,7 +92,7 @@ contract Dragon is ERC721 {
     /**
      * @dev Throws if called by any account other than the allowed ones.
      */
-    modifier onlyAllowed() {
+    modifier onlyAllowed()  {
         require(allowedBreeders[msg.sender], "Allowed: user is not allowed to call this function");
         _;
     }
