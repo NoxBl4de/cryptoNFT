@@ -36,7 +36,9 @@ contract Dragon is ERC721 {
         return true;
     }
 
-
+    function exist(uint256 tokenId) public returns(bool) {
+        return _exists(tokenId);
+    }
     
     function random(uint256 modulo) public returns (uint256) {
       return SafeMath.mod(uint(keccak256(abi.encodePacked(

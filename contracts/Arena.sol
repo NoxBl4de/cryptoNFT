@@ -7,7 +7,7 @@ import '../node_modules/@openzeppelin/contracts/token/ERC721/ERC721.sol';
 contract Arena {
 
     // tokenId => addressFighter
-    mapping (uint256 => address) public userToken;
+    mapping (uint256 => address payable) public userToken;
 
     struct Fight {
         uint256 fighter_1;
@@ -15,9 +15,9 @@ contract Arena {
         uint256 stake;
     }
     Dragon instanceofDragon;
-    uint256[] private proposals;
-    // Counts the number of fight proposals
-    uint256 private cptProposal = 0;
+    
+    uint256 fighter;
+    uint256 stake;
 
     constructor() {
         instanceofDragon = Dragon(msg.sender);
@@ -25,24 +25,20 @@ contract Arena {
 
     // choose a dragon to fight and chose an amount to stake
     function proposeToFight(uint256 tokenId, uint256 stakeProposed) public {
-        proposals.push((cptProposal, tokenId, stakeProposed));
+        fighter = tokenId;
+        stake = stakeProposed;
 
         userToken[tokenId] = msg.sender;
-
-        cptProposal += 1;
     }
 
     // Staking the same amount as the proposing address
     // Check the proposals with getProposals
     // Chooses one with the index and launches the fight
-    function agreeToFight(uint256 indexProposal, uint256 tokenId) public {
-        uint256 index;
-        uint256 fighter_1;
-        uint256 stake;
+    function agreeToFight(uint256 tokenId) public {
+
+        require(userToken[fighter] != msg.sender, "You cannot fight your own dragon !");
         
-        (index, fighter_1, stake) = proposals[indexProposal];
-        
-        Fight memory newFight = Fight(fighter_1, tokenId, stake);
+        Fight memory newFight = Fight(fighter, tokenId, stake);
 
         userToken[tokenId] = msg.sender;
         
@@ -52,10 +48,11 @@ contract Arena {
     
     // Make two dragons fight
     // The result of the fight is random and the loser dies
-    function combat(Fight memory fight) internal payable returns(uint256) {
+    function combat(Fight memory fight) internal returns(uint256) {
 
-        uint8 res = instanceofDragon.random(2);
+        uint8 res = uint8(instanceofDragon.random(2));
         uint256 winner;
+
         if (res == 0) {
             winner = fight.fighter_1;
             instanceofDragon.deadAnimal(fight.fighter_2);
@@ -67,12 +64,7 @@ contract Arena {
         }
 
         userToken[winner].transfer(fight.stake*2);
-    }
-    
-    /**
-    * Returns the list of proposals to fight
-     */
-    function getProposals() public returns(uint256[] memory proposal)  {
-        return proposals;
+
+        return winner;
     }
 }
