@@ -19,7 +19,7 @@ contract Dragon is ERC721 {
     enum Element{ FIRE, WATER, ELECTRICAL, DARKNESS, AIR, GROUND }
     
     struct Characteristics {
-        Element elem; //element entre 1 et 8
+        Element elem; //element entre 1 et 6
         bool male; // 0 F / 1 M
         uint256 defense;
         uint256 attack;       
@@ -38,7 +38,7 @@ contract Dragon is ERC721 {
 
 
     
-    function random(uint256 modulo) private view returns (uint8) {
+    function random(uint256 modulo) internal view returns (uint8) {
       return uint8(SafeMath.mod(uint256(keccak256(block.timestamp, block.difficulty), modulo)));
     }
    
@@ -73,8 +73,8 @@ contract Dragon is ERC721 {
 
 
 
-    function breedAnimal(_tokenId1, _tokenId2) public onlyAllowed {
-        require(ownerOf(_tokenId1) == ownerOf(_tokenId2));
+    function breedAnimal(_tokenId1, _tokenId2) public onlyAllowed notZeroAddress {
+        require(ownerOf(_tokenId1) == ownerOf(_tokenId2), 'both token must be from the same token holder in order to be bred');
         Element elem = metadata[_tokenId1].elem;
         bool gender = random(2) == 0 ? true : false;
         uint256 defense = Math.average(metadata[_tokenId1].defense, metadata[_tokenId2].defense);
@@ -99,7 +99,7 @@ contract Dragon is ERC721 {
     }
 }
 
-contract Auction is Dragon {
+contract Auction {
 
     struct Auction {
         address seller;
@@ -121,55 +121,73 @@ contract Auction is Dragon {
         nbAuction = 0;
     }
 
-    modifier validAddress() {
-        require();
-        _;
-    }
-
     modifier activeAuction(uint256 tokenId) {
-        require(!activeAuctions[tokenId], 'The auction is not active');
+        require(activeAuctions[tokenId], 'The auction is not active');
         _;
     }
 
     // 
-    //  
+    //  Creating an action based on the criteria defined by the user
+    //  If immediatBuyingPrice is equal to 0, then the buyers cannot buy the token immediatly
+    //  They must bid
+    //
     function createAuction(uint256 tokenId_, address payable seller_, uint256 startingPrice_, uint256 immediatBuyingPrice_ ) public activeAuction(tokenId_) returns(bool) {
-        require(_exists(tokenId_), 'This tokenId does not belong to this address');
-        require(ownerOf(tokenId_) == seller, 'The token does not belong to you');
+        require(Dragon._exists(tokenId_), 'This tokenId does not belong to this address');
+        require(Dragon.ownerOf(tokenId_) == seller, 'The token does not belong to you');
         activeAuctions[tokenId_] = true;
-        auctions[tokenId_] = Auction(seller_, seller_, startingPrice_, immediatBuyingPrice_, startingPrice_, now + (2 * 1 days) );
+        Auction memory auction = Auction(seller_, seller_, startingPrice_, immediatBuyingPrice_, startingPrice_, now + (2 * 1 days) );
+        auctions[tokenId_] = auction;
         nbAuction += 1;
         return true;
     }
     
+    //
     // Checks if the auction is still live
     // Checks if the amount entered is higher than the amount bidded
     // Returns true if the bid is placed, no if not
+    //
     function bidOnAuction(uint256 _tokenId, address _bidder, uint256 _amount) public activeAuction(_tokenId) returns(bool) {
         auctions[tokenId_].bidder = _bidder;
         auctions[tokenId_].currentPrice = _amount;
         return true;
     }
 
+    //
     // Enables the buyer to buy the token instantly
     // if 0 then no immediat buying price
-    function immediatBuy(uint256 tokenId, address buyer, uint256 amount_) public returns(bool) {
+    //
+    function immediatBuy(uint256 tokenId, address buyer, uint256 amount_) public activeAuction(_tokenId) returns(bool) {
+        // requirements for instant buying the token, without using the auction
         require(auctions[tokenId].immediatBuyingPrice > 0, 'No immediat buying price');
         require(auctions[tokenId].immediatBuyingPrice == amount_, 'The price must be exact');
-        safeTransferFrom(auctions[tokenId].seller, buyer, tokenId);
+        Dragon.safeTransferFrom(auctions[tokenId].seller, buyer, tokenId);
         // send eth to the seller from the buyer
-        safeTransfertFrom(buyer, auctions[tokenId].seller, amount_);
+        Dragon.safeTransfertFrom(buyer, auctions[tokenId].seller, amount_);
+        activeAuctions[tokenId] = false;
+    }
+    
+    //
+    //  after 2 days of auction, the highest bidder can claim the token
+    //  The contract verifies that the token is off the auctions and that the address claiming the token is the one that won the auction.
+    //
+    function claimAuction(address payable from, address to, uint256 tokenId) public payable activeAuction(_tokenId) returns(bool) {
+        
+        // requirements for claiming the token
+        require(    msg.sender == auctions[tokenId].bidder, 
+                    'you must be the bidder in order to execute this function');
+        require(    auctions[tokenId].deadline < now, 
+                    'the auction is not finished yet');
+        require(    msg.value == auctions[tokenId].currentPrice, 
+                    'the amount must be the exact price');
+        
+        // sending the token
+        Dragon.safeTransferFrom(auctions[tokenId].seller, auctions[tokenId].bidder, tokenId);
+        // paying the seller
+        auctions[tokenId].seller.transfer(msg.value);
+        activeAuctions[tokenId] = false;
     }
 
-    // after 2 days of auction, the highest bidder can claim the token
-    function claimAuction(address from, address to, uint256 tokenId, uint256 amount) public payable returns(bool) {
-        require(auctions[tokenId].deadline < now, 'the auction is not finished yet');
-        safeTransferFrom(auctions[tokenId].seller, auctions[tokenId].bidder, tokenId);
-        // send eth to the seller from the buyer
-        auctions[tokenId].seller.transfer(amount);
-    }
-
-    // Send ETH to the contract address, needed to claim / buy tokens
+    // Send ETH to the contract address
     function receive() external payable {
 
     }
@@ -178,28 +196,55 @@ contract Auction is Dragon {
 
 contract Arena {
 
-    // tokenId => nbFight
-    mapping(uint256 => uint256) public nbFights;
-    uint256 public totalFights;
+    // tokenId => addressFighter
+    mapping (uint256 => address) public userToken;
+
+    struct Fight {
+        uint256 fighter_1;
+        uint256 fighter_2;
+        uint256 stake;
+    }
+
+    uint256[] private proposals;
+    // Counts the number of fight proposals
+    uint256 private cptProposal = 0;
 
     constructor() Arena() {
-        totalFights = 0;
     }
 
     // choose a dragon to fight and chose an amount to stake
-    function proposeToFight(uint256 tokenId, uint256 stake) {
+    function proposeToFight(uint256 tokenId, uint256 stakeProposed) public Dragon.onlyAllowed {
+        proposals.push((cptProposal, tokenId, stakeProposed));
 
+        userToken[tokenId] = msg.sender;
 
-        
+        cptProposal += 1;
     }
 
     // Staking the same amount as the proposing address
-    function agreeToFight(uint256 tokenId) {
+    // Check the proposals with getProposals
+    // Chooses one with the index and launches the fight
+    function agreeToFight(uint256 indexProposal, uint256 tokenId) public Dragon.onlyAllowed {
+        uint256 index, fighter_1, stake;
+        
+        (index, fighter_1, stake) = proposals[indexProposal];
+        
+        Fight memory newFight = Fight(fighter_1, tokenId, stake);
+
+        userToken[tokenId] = msg.sender;
+        
+        fight(newFight);
         
     }
     
     // fighter represents the tokenId of the dragon
-    function fight(uint256 fighter_1, uint256 fighter_2) returns(uint256 winner) {
+    function fight(Fight fight) private payable returns(uint256 winner) {
         
+        
+
+    }
+    
+    function getProposals() public returns(uint256[] proposal) {
+        return proposals;
     }
 }

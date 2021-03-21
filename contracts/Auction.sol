@@ -1,5 +1,6 @@
 pragma solidity ^0.7.6;
 
+import '.\Dragon.sol';
 import 'C:\Users\Hugo\dev\cryptoNFT\node_modules\@openzeppelin\contracts\token\ERC721\ERC721.sol';
 
 contract Auction is Dragon {
