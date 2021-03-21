@@ -1,11 +1,13 @@
-pragma solidity ^7.6.0
+pragma solidity ^0.7.6;
 
-import 'C:\Users\Hugo\dev\cryptoNFT\node_modules\@openzeppelin\contracts\token\ERC721\ERC721.sol'
+import 'C:\Users\Hugo\dev\cryptoNFT\node_modules\@openzeppelin\contracts\token\ERC721\ERC721.sol';
+import 'C:\Users\Hugo\dev\cryptoNFT\node_modules\@openzeppelin\contracts\math\Math.sol';
+import 'C:\Users\Hugo\dev\cryptoNFT\node_modules\@openzeppelin\contracts\math\SafeMath.sol';
 
 contract Dragon is ERC721 {
 
     using SafeMath for uint;
-    using Math;
+    using Math for uint;
 
     uint256 private _numToken;
 
@@ -37,7 +39,7 @@ contract Dragon is ERC721 {
 
     
     function random(uint256 modulo) private view returns (uint8) {
-      return uint8(SafeMath.mod(uint256(keccak256(block.timestamp, block.difficulty), modulo);
+      return uint8(SafeMath.mod(uint256(keccak256(block.timestamp, block.difficulty), modulo)));
     }
    
 
@@ -46,24 +48,25 @@ contract Dragon is ERC721 {
     // call _mint
         metadata[_numToken] = metadataGenerator();
         _safeMint(msg.sender, _numToken);
+        _numToken += 1;
         return true;
     }
 
     function metadataGenerator() public returns(Characteristics){
-      Element elem = random(Element.Last);
-      bool gender = random(2);
-      uint256 defense = random(10);
-      uint256 attack = random(10);
-      uint256 hp = random(100);
-      uint256 init = random(100);
-      Characteristics memory randomCharac = Characteristics(elem, gender, defense, attack, hp, init);
-      return randomCharac;
+        Element elem = random(Element.Last);
+        bool gender = random(2) == 0 ? true : false;
+        uint256 defense = random(10);
+        uint256 attack = random(10);
+        uint256 hp = random(100);
+        uint256 init = random(100);
+        Characteristics memory randomCharac = Characteristics(elem, gender, defense, attack, hp, init);
+        return randomCharac;
     }
 
 
 
-    function deadAnimal(uint256 _tokenId) public returns(bool) onlyAllowed {
-    // call _burn
+    function deadAnimal(uint256 _tokenId) public onlyAllowed returns(bool) {
+        // call _burn
         _burn(_tokenId);
         return true;
     }
@@ -71,13 +74,14 @@ contract Dragon is ERC721 {
 
 
     function breedAnimal(_tokenId1, _tokenId2) public onlyAllowed {
-      Element elem = metadata[_tokenId1].elem;
-      bool gender = random(2);
-      uint256 defense = Math.average(metadata[_tokenId1].defense, metadata[_tokenId2].defense);
-      uint256 attack = Math.average(metadata[_tokenId1].attack, metadata[_tokenId2].attack);
-      uint256 hp = Math.average(metadata[_tokenId1].hp, metadata[_tokenId2].hp);
-      uint256 init = Math.average(metadata[_tokenId1].init, metadata[_tokenId2].init);
-      Characteristics memory randomCharac = Characteristics(elem, gender, defense, attack, hp, init);
+        require(ownerOf(_tokenId1) == ownerOf(_tokenId2));
+        Element elem = metadata[_tokenId1].elem;
+        bool gender = random(2) == 0 ? true : false;
+        uint256 defense = Math.average(metadata[_tokenId1].defense, metadata[_tokenId2].defense);
+        uint256 attack = Math.average(metadata[_tokenId1].attack, metadata[_tokenId2].attack);
+        uint256 hp = Math.average(metadata[_tokenId1].hp, metadata[_tokenId2].hp);
+        uint256 init = Math.average(metadata[_tokenId1].init, metadata[_tokenId2].init);
+        Characteristics memory randomCharac = Characteristics(elem, gender, defense, attack, hp, init);
     }
 
     
@@ -90,7 +94,7 @@ contract Dragon is ERC721 {
     }
 
     modifier notZeroAddress() {
-        require(msg.sender != address(0), "ERC721: balance query for the zero address")
+        require(msg.sender != address(0), "ERC721: balance query for the zero address");
         _;
     }
 }
@@ -99,22 +103,27 @@ contract Auction is Dragon {
 
     struct Auction {
         address seller;
-        address bidder
+        address bidder;
         uint256 startingPrice;
         uint256 immediatBuyingPrice;
         uint currentPrice;
         uint256 deadline;
     }
+
+    // keep track of the nb of auctions created
+    uint256 public nbAuction;
     
     // mapping the tokenId with the auction struct
     mapping (uint256 => Auction) public auctions;
     mapping (uint256 => bool) public activeAuctions;
-    constructor Auction() {
-        
+    
+    constructor() Auction() {
+        nbAuction = 0;
     }
 
     modifier validAddress() {
-        require()
+        require();
+        _;
     }
 
     modifier activeAuction(uint256 tokenId) {
@@ -124,11 +133,12 @@ contract Auction is Dragon {
 
     // 
     //  
-    function createAuction(uint256 tokenId_, address payable seller_, uint256 startingPrice_, uint256 immediatBuyingPrice_) public activeAuction(tokenId_) returns(bool) {
+    function createAuction(uint256 tokenId_, address payable seller_, uint256 startingPrice_, uint256 immediatBuyingPrice_ ) public activeAuction(tokenId_) returns(bool) {
         require(_exists(tokenId_), 'This tokenId does not belong to this address');
         require(ownerOf(tokenId_) == seller, 'The token does not belong to you');
         activeAuctions[tokenId_] = true;
         auctions[tokenId_] = Auction(seller_, seller_, startingPrice_, immediatBuyingPrice_, startingPrice_, now + (2 * 1 days) );
+        nbAuction += 1;
         return true;
     }
     
@@ -141,27 +151,50 @@ contract Auction is Dragon {
         return true;
     }
 
+    // Enables the buyer to buy the token instantly
+    // if 0 then no immediat buying price
+    function immediatBuy(uint256 tokenId, address buyer, uint256 amount_) public returns(bool) {
+        require(auctions[tokenId].immediatBuyingPrice > 0, 'No immediat buying price');
+        require(auctions[tokenId].immediatBuyingPrice == amount_, 'The price must be exact');
+        safeTransferFrom(auctions[tokenId].seller, buyer, tokenId);
+        // send eth to the seller from the buyer
+        safeTransfertFrom(buyer, auctions[tokenId].seller, amount_);
+    }
+
     // after 2 days of auction, the highest bidder can claim the token
-    function claimAuction(address from, address to, uint256 tokenId) public returns(bool) {
+    function claimAuction(address from, address to, uint256 tokenId, uint256 amount) public payable returns(bool) {
         require(auctions[tokenId].deadline < now, 'the auction is not finished yet');
-        safeTransferFrom(auctions[tokenId].seller, auctions[tokenId].bidder, tokenId)
+        safeTransferFrom(auctions[tokenId].seller, auctions[tokenId].bidder, tokenId);
+        // send eth to the seller from the buyer
+        auctions[tokenId].seller.transfer(amount);
+    }
+
+    // Send ETH to the contract address, needed to claim / buy tokens
+    function receive() external payable {
+
     }
 
 }
 
 contract Arena {
 
-    constructor Arena() {
+    // tokenId => nbFight
+    mapping(uint256 => uint256) public nbFights;
+    uint256 public totalFights;
 
+    constructor() Arena() {
+        totalFights = 0;
     }
 
     // choose a dragon to fight and chose an amount to stake
     function proposeToFight(uint256 tokenId, uint256 stake) {
+
+
         
     }
 
     // Staking the same amount as the proposing address
-    function agreeToFight(uint256 stake) {
+    function agreeToFight(uint256 tokenId) {
         
     }
     
